@@ -2,10 +2,11 @@
 
 from sly import Lexer
 import os
+from pprint import pprint
 
-PRACTICA = os.path.join("/Users", "gomezd", "NewRepository", "Docencia",
-                        "Asignaturas", "Compiladores",
-                        "Lab_01_Lexing")
+PRACTICA = os.path.join("E:\\", "UNI", "4O CURSO",
+                        "2O CUATRI", "LENGUAJES DE PROGRAMACION",
+                        "CoolCompiler")
 DIR = os.path.join(PRACTICA, "grading")
 FICHEROS = os.listdir(DIR)
 TESTS = [fich for fich in FICHEROS
@@ -28,7 +29,7 @@ class CoolLexer(Lexer):
 
     @_(r'\d+')
     def INT_CONST(self, t):
-        t.value = int(t.value)
+        # t.value = int(t.value)
         return t
 
     @_(r't[rR][uU][eE]')
@@ -105,8 +106,9 @@ if __name__ == '__main__':
         resultado = g.read()
         texto = ''
         entrada = f.read()
-        print(lexer.salida(entrada))
-        texto = '\n'.join(lexer.salida(entrada))
+        lexer_out = lexer.salida(entrada)
+        pprint(lexer_out)
+        texto = '\n'.join(lexer_out)
         texto = f'#name "{fich}"\n' + texto
         f.close(), g.close()
         if texto.strip().split() != resultado.strip().split():
