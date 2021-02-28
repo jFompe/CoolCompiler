@@ -24,10 +24,11 @@ def tokenize(text):
         if ign_m:
             index = ign_m.end()
             continue    
-        raise SyntaxError('Bad char %r' % text[index])
+        print('Bad char %r' % text[index])
+        index += 1
 
 # Ejemplo de uso
-text = 'abc 123 cde 456'
+text = 'abc 123 ! cde 456'
 
 for tok in tokenize(text):
     print(tok)
