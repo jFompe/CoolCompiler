@@ -216,7 +216,7 @@ class CoolLexer(Lexer):
         LOOP, POOL, THEN, WHILE, CASE, ESAC, NEW, OF, NOT
     }
     others = {
-        GE, LE, ASSIGN, DARROW
+        LE, ASSIGN, DARROW
     }
 
     tokens = keywords | others | { OBJECTID, INT_CONST, BOOL_CONST, TYPEID, STR_CONST }
@@ -241,7 +241,6 @@ class CoolLexer(Lexer):
     NOT = r'[nN][oO][tT]\b'
 
     ASSIGN = r'<-'
-    GE = r'>='
     LE = r'<='
     DARROW = r'=>'
 
