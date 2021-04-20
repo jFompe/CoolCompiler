@@ -57,11 +57,15 @@ class CoolParser(Parser):
     errores = []
 
     precedence = (
+        ('right', 'ASSIGN'),
+        ('left', 'NOT'),
+        ('nonassoc', '<', 'LE', '='),
         ('left', '+', '-'),
         ('left', '*', '/'),
-        ('right', 'UMINUS', '~', 'NOT'),
-        ('nonassoc', '<', 'LE', '='),
-        ('left', '.', 'ISVOID'),
+        ('left', 'ISVOID'),
+        ('right', '~', 'UMINUS'),
+        ('left', '@'),
+        ('left', '.'),
     )
 
 
@@ -244,9 +248,9 @@ class CoolParser(Parser):
     def variabledefs(self, p):
         return [p.variabledef]
 
-    @_('variabledef "," variabledefs')
+    @_('variabledefs "," variabledef')
     def variabledefs(self, p):
-        return [p.variabledef] + p.variabledefs
+        return p.variabledefs + [p.variabledef]
 
     @_('LET variabledefs IN expr')
     def expr(self, p):
