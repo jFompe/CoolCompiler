@@ -100,19 +100,18 @@ class Structure:
     def has_type(self, type: str) -> bool:
         return type in self.structure
 
-    def check_classes(self):
-        self.check_no_main()
-        for k,v in self.structure.items():
-            parent = v['parent']
-            self.check_undefined_inherit(k, parent)
-            self.check_non_inheritable_classes(k, parent)
-            self.check_self_attribute(k)
-            self.check_repeated_inherited_attribute(k)
-            self.check_undefined_return_type(k)
-            self.check_self_type_parameters(k)
-            self.check_self_parameter(k)
-            self.check_repeated_formals(k)
-            self.check_redefined_arguments(k)
+    def check_class(self, className: str):
+        classInfo = self.structure[className]
+        parent = classInfo['parent']
+        self.check_undefined_inherit(className, parent)
+        self.check_non_inheritable_classes(className, parent)
+        self.check_self_attribute(className)
+        self.check_repeated_inherited_attribute(className)
+        self.check_undefined_return_type(className)
+        self.check_self_type_parameters(className)
+        self.check_self_parameter(className)
+        self.check_repeated_formals(className)
+        self.check_redefined_arguments(className)
 
     def check_repeated_formals(self, className: str):
         for mv in self.structure[className]['methods'].values():

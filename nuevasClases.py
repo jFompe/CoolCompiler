@@ -581,8 +581,8 @@ class Programa(IterableNodo):
         # print(ctx.structure)
 
         try:
-            ctx.check_classes()
-        except CompilerError as err:
+            ctx.structure.check_no_main()
+        except NO_MAIN as err:
             ctx.add_error(str(err))
             return ctx.errores
 
