@@ -4,3 +4,6 @@
 gradingParser/
 
 salida.out
+
+*.test.bien
+*.test.nuestro
