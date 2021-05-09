@@ -29,11 +29,10 @@ class EXPR_NOT_CONFORM(CompilerError):
         return f'Expression type {self.type1} does not conform to declared static dispatch type {self.type2}.'
 
 class EXPR_IN_UNDEFINED_TYPE(CompilerError):
-    def __init__(self, expr,clase) -> None:
-        self.expr = expr
+    def __init__(self, clase) -> None:
         self.clase = clase
     def __str__(self) -> str:
-        return f'\'{self.expr}\' used with undefined class {self.clase}.'
+        return f'\'new\' used with undefined class {self.clase}.'
 
 class UNDEFINED_RETURN_TYPE(CompilerError):
     def __init__(self, type,method) -> None:
@@ -43,10 +42,8 @@ class UNDEFINED_RETURN_TYPE(CompilerError):
         return f'Undefined return type {self.type} in method {self.method}.'
 
 class NO_ATTRIBUTE_SELF(CompilerError):
-    def __init__(self, name) -> None:
-        self.name = name
     def __str__(self) -> str:
-        return f'\'{self.name}\' cannot be the name of an attribute.'
+        return f'\'self\' cannot be the name of an attribute.'
 
 class ASSIGN_TYPE_ERROR(CompilerError):
     def __init__(self, type1, type2, id) -> None:
@@ -76,6 +73,10 @@ class INCORRECT_ARGUMENT(CompilerError):
         self.type2 = type2 
     def __str__(self) -> str:
         return f'In call of method {self.method}, type {self.type1} of parameter {self.id} does not conform to declared type {self.type2}.'
+
+class INCORRECT_ARGUMENTS_LENGTH(CompilerError):
+    def __str__(self) -> str:
+        return f'Incorrect arguments length'
 
 class INCORRECT_BIN_OP_TYPES(CompilerError):
     def __init__(self, type1, op, type2) -> None:
@@ -125,10 +126,8 @@ class REPEATED_FORMAL(CompilerError):
         return f'Formal parameter {self.id} is multiply defined.'
 
 class NOT_BOUNDABLE_IN_LET(CompilerError):
-    def __init__(self, id) -> None:
-        self.id = id
     def __str__(self) -> str:
-        return f'\'{self.id}\' cannot be bound in a \'let\' expression.'
+        return f'\'self\' cannot be bound in a \'let\' expression.'
 
 class UNDEFINED_INHERIT(CompilerError):
     def __init__(self, cl1, cl2) -> None:
@@ -137,7 +136,7 @@ class UNDEFINED_INHERIT(CompilerError):
     def __str__(self) -> str:
         return f'Class {self.cl1} inherits from an undefined class {self.cl2}.'
 
-class WRONG_REDIFINED_ARGUMENTS(CompilerError):
+class WRONG_REDEFINED_ARGUMENTS(CompilerError):
     def __init__(self, method,type1,type2) -> None:
         self.method = method
         self.type1 = type1
