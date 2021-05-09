@@ -5,7 +5,8 @@ from sly import Parser
 import sys
 import os
 
-from Clases import *
+# from Clases import *
+from nuevasClases import *
 
 DIRECTORIO = os.path.join("E:\\", "UNI", "4O CURSO",
                         "2O CUATRI", "LENGUAJES DE PROGRAMACION",
@@ -14,7 +15,7 @@ DIRECTORIO = os.path.join("E:\\", "UNI", "4O CURSO",
 
 sys.path.append(DIRECTORIO)
 
-GRADING = os.path.join(DIRECTORIO, 'gradingParser')
+GRADING = os.path.join(DIRECTORIO, 'gradingSemantics')
 FICHEROS = os.listdir(GRADING)
 
 TESTS = [fich for fich in FICHEROS
@@ -22,26 +23,9 @@ TESTS = [fich for fich in FICHEROS
          and fich.endswith(".test")]
 
 SINGLE_TESTS = [
-    # "complex.test", # Revisar al poner = nonassoc
-    # "unaryassociativity.test",
+    "anattributenamedself.test"
 
     # "-- PASADOS --"
-    # "addedlet.test",
-    # "atoi.test",
-    # "attrcapitalname.test",
-    # "badblock.test",
-    # "baddispatch1.test",
-    # "badexprlist.test",
-    # "badfeatures.test",
-    # "casemultiplebranch.test",
-    # "casenoexpr.test",
-    # "classnoname.test",
-    # "firstbindingerrored.test",
-    # "ifnoelse.test",
-    # "letinitmultiplebindings.test",
-    # "while.test",
-    # "whileoneexpression.test",
-    # "whilenoloop.test",
 ]
 
 PRINT_ERRORS = False
@@ -399,7 +383,12 @@ for fich in TESTS:
         pass
     try:
         if j and not parser.errores:
-            resultado = '\n'.join([c for c in j.str(0).split('\n') if c and '#' not in c])
+            semantic_erorrs = j.Tipo()
+            if not semantic_erorrs:
+                resultado = '\n'.join([c for c in j.str(0).split('\n') if c and '#' not in c])
+            else:
+                resultado = '\n'.join(semantic_erorrs)
+                resultado += '\n' + "Compilation halted due to static semantic errors."
         else:
             resultado = '\n'.join(parser.errores)
             resultado += '\n' + "Compilation halted due to lex and parse errors"
@@ -413,5 +402,6 @@ for fich in TESTS:
             f.close()
             g.close()
 
-    except:
+    except Exception as err:
+        print(err)
         print(f"Falla en {fich}")
