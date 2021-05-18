@@ -23,9 +23,21 @@ TESTS = [fich for fich in FICHEROS
          and fich.endswith(".test")]
 
 SINGLE_TESTS = [
-    "anattributenamedself.test"
+    # "list.cl.test"
 
     # "-- PASADOS --"
+    # "assignment.test"
+    # "anattributenamedself.test"
+    # 'badmethodcallsitself.test'
+    # "badargs1.test"
+    # "badequalitytest.test"
+    # "badstaticdispatch.test"
+    # "basic.test"
+    # "cells.cl.test"
+    # "dispatch.test"
+    # "hairyscary.cl.test"
+    # "initwithself.test"
+    # "redefinedclass.test"
 ]
 
 PRINT_ERRORS = False
@@ -384,11 +396,11 @@ for fich in TESTS:
     try:
         if j and not parser.errores:
             semantic_erorrs = j.Tipo()
+            # print(semantic_erorrs)
             if not semantic_erorrs:
                 resultado = '\n'.join([c for c in j.str(0).split('\n') if c and '#' not in c])
             else:
-                resultado = '\n'.join(semantic_erorrs)
-                resultado += '\n' + "Compilation halted due to static semantic errors."
+                resultado = semantic_erorrs + '\n' + "Compilation halted due to static semantic errors."
         else:
             resultado = '\n'.join(parser.errores)
             resultado += '\n' + "Compilation halted due to lex and parse errors"

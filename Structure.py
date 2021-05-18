@@ -5,11 +5,11 @@ from pprint import pformat, pprint
 
 
 BASIC_CLASSES = [
-    'Int', 'String', 'Bool', 'IO', 'Object'
+    'Int', 'String', 'Bool', 'IO', 'Object', 'SELF_TYPE'
 ]
 
 NON_INHERITABLE_CLASSES = [
-    'Int', 'String', 'Bool'
+    'Int', 'String', 'Bool', 'SELF_TYPE'
 ]
 
 
@@ -86,11 +86,11 @@ class Structure:
             'methods': {}
         }
 
-    def add_new_class(self, name: str, parent: str, attributes: dict, methods: dict):
+    def add_new_class(self, linea: int, name: str, parent: str, attributes: dict, methods: dict):
         if name in BASIC_CLASSES:
-            raise REDEFINITION_OF_BASIC_CLASS(name)
+            raise REDEFINITION_OF_BASIC_CLASS(linea, name)
         if name in self.structure:
-            raise REDEFINED_CLASS(name)
+            raise REDEFINED_CLASS(linea, name)
         self.structure[name] = {
             'parent': parent,
             'attributes': attributes,
@@ -100,86 +100,45 @@ class Structure:
     def has_type(self, type: str) -> bool:
         return type in self.structure
 
-    def check_class(self, className: str):
-        classInfo = self.structure[className]
-        parent = classInfo['parent']
-        self.check_undefined_inherit(className, parent)
-        self.check_non_inheritable_classes(className, parent)
-        self.check_self_attribute(className)
-        self.check_repeated_inherited_attribute(className)
-        self.check_undefined_return_type(className)
-        self.check_self_type_parameters(className)
-        self.check_self_parameter(className)
-        self.check_repeated_formals(className)
-        self.check_redefined_arguments(className)
-
-    def check_repeated_formals(self, className: str):
-        for mv in self.structure[className]['methods'].values():
-            formal_counts = Counter(mv['formals'].keys())
-            for f in formal_counts:
-                if formal_counts[f] > 1:
-                    raise REPEATED_FORMAL(f)
-
-    def check_redefined_arguments(self, className: str):
-        methods = self.structure[className]['methods']
-        methodNames = set(m for m in methods)
+    def check_valid_redefined_formals(self, linea: int, className: str, methodName: str, formals: dict):
         parent = self.structure[className]['parent']
-        while parent and methodNames:
-            parMethods = set(m for m in self.structure[parent]['methods'])
-            for m in methodNames.intersection(parMethods):
-                self.check_redefined_methods(
-                    m,
-                    self.structure[className]['methods'][m],
-                    self.structure[parent]['methods'][m]
-                )
+        while parent:
+            parent_method = self.structure[parent]['methods'].get(methodName, None)
+            if parent_method:
+                if len(parent_method['formals']) != len(formals):
+                    raise NUMBER_FORMAL_PARAMETERS(linea, methodName)
+                for m in formals:
+                    if m in parent_method['formals']: 
+                        if formals[m] != parent_method['formals'][m]:
+                            raise WRONG_REDEFINED_ARGUMENTS(linea, methodName, formals[m], parent_method['formals'][m])
             parent = self.structure[parent]['parent']
 
-    def check_redefined_methods(self, name, m1, m2):
-        if len(m1['formals']) != len(m2['formals']):
-            raise NUMBER_FORMAL_PARAMETERS(name)
-        for f1,f2 in zip(m1['formals'], m2['formals']):
-            if f1['type'] != f2['type']:
-                raise WRONG_REDEFINED_ARGUMENTS(name,f1['type'],f2['type'])
+    def inherits_from(self, type1: str, type2: str):
+        if type1 == type2:
+            return True
+        parent = self.structure[type1]['parent']
+        while parent:
+            if parent == type2:
+                return True
+            parent = self.structure[parent]['parent']
+        return False
 
     def check_no_main(self):
         if not self.has_main():
-            raise NO_MAIN
+            raise NO_MAIN(0)
 
-    def check_self_type_parameters(self, className):
-        for method in self.structure[className]['methods'].values():
-            for formal in method['formals']:
-                if formal == 'self':
-                    raise NO_PARAMETER_SELF
+    def check_undefined_inherit(self, parent):
+        return parent in self.structure
 
-    def check_self_parameter(self, className):
-        for method in self.structure[className]['methods'].values():
-            for name, type in method['formals'].items():
-                if type == 'SELF_TYPE':
-                    raise SELF_TYPE_PARAMETER(name)
+    def check_non_inheritable_classes(self, parent):
+        return parent in NON_INHERITABLE_CLASSES
 
-    def check_undefined_inherit(self, className, parent):
-        if parent is not None and parent not in self.structure:
-            raise UNDEFINED_INHERIT(className, parent)
+    def check_valid_return_type(self, ret_type):
+        return ret_type in self.structure or ret_type == 'SELF_TYPE'
 
-    def check_non_inheritable_classes(self, className, parent):
-        if parent in NON_INHERITABLE_CLASSES:
-                raise INHERIT_BASIC_CLASS(className, parent)
-
-    def check_undefined_return_type(self, className):
-        methods = self.structure[className]['methods']
-        for m,v in methods.items():
-            if v['type'] not in self.structure and v['type'] != 'SELF_TYPE':
-                raise UNDEFINED_RETURN_TYPE(v['type'], m)
-
-    def check_self_attribute(self, className: str) -> bool:
-        if any(attr == 'self' for attr in self.get_class_proper_attributes(className)):
-            raise NO_ATTRIBUTE_SELF
-
-    def check_repeated_inherited_attribute(self, className: str) -> dict:
+    def check_repeated_inherited_attribute(self, className: str, attr: str) -> dict:
         inh_attrs = self.get_class_inherited_attributes(className)
-        for attr in self.get_class_proper_attributes(className):
-            if attr in inh_attrs:
-                raise INHERITED_ATTRIBUTE(attr)
+        return attr in inh_attrs
 
     def get_class_attributes(self, className: str) -> dict:
         return {
@@ -220,7 +179,16 @@ class Structure:
 
         '''
         
-        return self.structure[typeid]['methods'].get(methodName, None)
+        if metodo := self.structure[typeid]['methods'].get(methodName, None):
+            return metodo
+        
+        parent = self.structure[typeid]['parent']
+        while parent:
+            if metodo := self.structure[parent]['methods'].get(methodName, None):
+                return metodo
+            parent = self.structure[parent]['parent']
+
+        return None
 
     def get_method_attributes(self, className: str, methodName: str) -> dict:
         return self.structure[className]['methods'][methodName]
@@ -233,17 +201,22 @@ class Structure:
         if typeid1 == typeid2:
             return typeid1
 
-        ancestors1, ancetors2 = [], []
+        ancestors1, ancestors2 = [], []
         parent1, parent2 = typeid1, typeid2
         while parent1:
             ancestors1.insert(0, parent1)
             parent1 = self.structure[parent1]['parent']
         while parent2:
-            ancetors2.insert(0, parent2)
+            ancestors2.insert(0, parent2)
             parent2 = self.structure[parent2]['parent']
 
-        while (a1 := ancestors1.pop(0)) == ancetors2.pop(0):
-            common_ancestor = a1
+        while ancestors1 and ancestors2:
+            a1 = ancestors1.pop(0)
+            a2 = ancestors2.pop(0)
+            if a1 == a2:
+                common_ancestor = a1
+            else: 
+                break
 
         return common_ancestor
 

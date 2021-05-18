@@ -9,35 +9,7 @@ from Exceptions import *
 
 
 DEFAULT_CAST = 'Object'
-
-
-# NO_MAIN = lambda: 'Class Main is not defined.'
-# RETURN_NOT_CONFORM = lambda type1,method,type2: f'Inferred return type {type1} of method {method} does not conform to declared return type {type2}.'
-# INITIALIZATION_NOT_CONFORM = lambda type1,id,type2: f'Inferred type {type1} of initialization of {id} does not conform to identifier\'s declared type {type2}.'
-# EXPR_NOT_CONFORM = lambda type1,type2: f'Expression type {type1} does not conform to declared static dispatch type {type2}.'
-# EXPR_IN_UNDEFINED_TYPE = lambda expr,clase: f'\'{expr}\' used with undefined class {clase}.'
-# UNDEFINED_RETURN_TYPE = lambda type,method: f'Undefined return type {type} in method {method}.'
-# NO_ATTRIBUTE_SELF = lambda name: f'\'{name}\' cannot be the name of an attribute.'
-# ASSIGN_TYPE_ERROR = lambda type1, type2, id: f'Type {type1} of assigned expression does not conform to declared type {type2} of identifier {id}.'
-# UNDECLARED_ID = lambda id: f'Undeclared identifier {id}.'
-# INHERITED_ATTRIBUTE = lambda id: f'Attribute {id} is an attribute of an inherited class.'
-# INCORRECT_ARGUMENT = lambda method, type1, id, type2 : f'In call of method {method}, type {type1} of parameter {id} does not conform to declared type {type2}.'
-# INCORRECT_BIN_OP_TYPES = lambda type1, op, type2: f'non-Int arguments: {type1} {op} {type2}'
-# DISPATCH_UNDEFINED = lambda id: f'Dispatch to undefined method {id}.'
-# ILLEGAL_COMPARISON = lambda: f'Illegal comparison with a basic type.'
-# REDEFINITION_OF_BASIC_CLASS = lambda cl: f'Redefinition of basic class {cl}.'
-# INHERIT_BASIC_CLASS = lambda cl1, cl2: f'Class {cl1} cannot inherit class {cl2}.'
-# INCORRECT_LOOP_CONDITION = lambda: f'Loop condition does not have type Bool.'
-# DUPLICATE_BRANCH = lambda type: f'Duplicate branch {type} in case statement.'
-# REPEATED_FORMAL = lambda id: f'Formal parameter {id} is multiply defined.'
-# NOT_BOUNDABLE_IN_LET = lambda id: f'\'{id}\' cannot be bound in a \'let\' expression.'
-# UNDEFINED_INHERIT = lambda cl1, cl2: f'Class {cl1} inherits from an undefined class {cl2}.'
-# WRONG_REDIFINED_ARGUMENTS = lambda method,type1,type2: f'In redefined method {method}, parameter type {type1} is different from original type {type2}'
-# REDEFINED_CLASS = lambda cl: f'Class {cl} was previously defined.'
-# SELF_ASSIGNMENT = lambda: f'Cannot assign to \'self\'.'
-# NO_PARAMETER_SELF = lambda: f'\'self\' cannot be the name of a formal parameter.'
-# SELF_TYPE_PARAMETER = lambda id: f'Formal parameter {id} cannot have type SELF_TYPE.'
-# NUMBER_FORMAL_PARAMETERS = lambda method: f'Incompatible number of formal parameters in redefined method {method}.'
+NULL = '_no_type'
 
 
 
@@ -71,14 +43,14 @@ class Asignacion(Expresion):
     cuerpo: Expresion
 
     def Tipo(self, ctx: Context) -> None:
+        if self.nombre == 'self':
+            raise SELF_ASSIGNMENT(self.cuerpo.linea)
         tipo = ctx.get_variable_type(self.nombre)
         if not tipo:
-            raise UNDECLARED_ID(self.nombre)
+            raise UNDECLARED_ID(self.cuerpo.linea, self.nombre)
         self.cuerpo.Tipo(ctx)
-        if tipo == 'self':
-            raise SELF_ASSIGNMENT
-        if tipo != self.cuerpo.cast:
-            raise ASSIGN_TYPE_ERROR(self.cuerpo.cast, tipo, self.nombre)
+        if not ctx.inherits_from(self.cuerpo.cast, tipo):
+            raise ASSIGN_TYPE_ERROR(self.cuerpo.linea, self.cuerpo.cast, tipo, self.nombre)
         self.cast = self.cuerpo.cast
 
     def str(self, n):
@@ -102,11 +74,12 @@ class LlamadaMetodoEstatico(Expresion):
         for arg in self.argumentos:
             arg.Tipo(ctx)
         if not ctx.inherits_from(self.cuerpo.cast, self.clase):
-            raise EXPR_NOT_CONFORM(self.cuerpo.cast, self.clase)
+            raise EXPR_NOT_CONFORM(self.cuerpo.linea, self.cuerpo.cast, self.clase)
         ctx.check_method(
-            self.clase, self.nombre_metodo, 
+            self.linea, self.clase, self.nombre_metodo, 
             [arg.cast for arg in self.argumentos])
-        self.cast = self.cuerpo.cast
+        metType = ctx.get_method_type(self.cuerpo.cast, self.nombre_metodo)
+        self.cast = self.cuerpo.cast if metType == 'SELF_TYPE' else metType
 
     def str(self, n):
         resultado = super().str(n)
@@ -128,17 +101,15 @@ class LlamadaMetodo(Expresion):
     argumentos: List[Expresion]
 
     def Tipo(self, ctx: Context) -> None:
-        # TODO Check nombre en scope y cuerpo igual al tipo
         self.cuerpo.Tipo(ctx)
         for arg in self.argumentos:
             arg.Tipo(ctx)
-        clase = (ctx.current_class() 
-            if self.cuerpo.nombre == 'self' 
-            else self.cuerpo.cast) 
+        clase = self.cuerpo.cast
         ctx.check_method(
-            clase, self.nombre_metodo,
+            self.linea, clase, self.nombre_metodo,
             [arg.cast for arg in self.argumentos])
-        self.cast = self.cuerpo.cast
+        metType = ctx.get_method_type(self.cuerpo.cast, self.nombre_metodo)
+        self.cast = self.cuerpo.cast if metType == 'SELF_TYPE' else metType
 
     def str(self, n):
         resultado = super().str(n)
@@ -163,8 +134,8 @@ class Condicional(Expresion):
         self.verdadero.Tipo(ctx)
         self.falso.Tipo(ctx)
         if self.condicion.cast != 'Bool':
-            return self.set_default_cast()
-        self.cast = ctx.structure.get_common_ancestor(self.verdadero.cast, self.falso.cast)
+            raise INCORRECT_LOOP_CONDITION(self.condicion.linea)
+        self.cast = ctx.get_common_ancestor([self.verdadero.cast, self.falso.cast])
 
     def str(self, n):
         resultado = super().str(n)
@@ -185,8 +156,8 @@ class Bucle(Expresion):
         self.condicion.Tipo(ctx)
         self.cuerpo.Tipo(ctx)
         if self.condicion.cast != 'Bool':
-            raise INCORRECT_LOOP_CONDITION
-        self.cast = self.cuerpo.cast
+            raise INCORRECT_LOOP_CONDITION(self.condicion.linea)
+        self.cast = 'Object'
 
     def str(self, n):
         resultado = super().str(n)
@@ -212,9 +183,10 @@ class Let(Expresion):
         self.cuerpo.Tipo(ctx)
         ctx.exit_scope()
         if self.nombre == 'self':
-            raise NOT_BOUNDABLE_IN_LET
-        if self.tipo.cast != self.inicializacion.tipo:
-            raise INITIALIZATION_NOT_CONFORM(self.inicializacion.cast, self.nombre, self.tipo.cast)
+            raise NOT_BOUNDABLE_IN_LET(self.linea)
+        if self.inicializacion.cast != NULL:
+            if not ctx.inherits_from(self.inicializacion.cast, self.tipo):
+                raise INITIALIZATION_NOT_CONFORM(self.inicializacion.linea,self.inicializacion.cast, self.nombre, self.tipo)
         self.cast = self.cuerpo.cast
 
     def str(self, n):
@@ -233,7 +205,8 @@ class Bloque(Expresion):
     expresiones: List[Expresion]
 
     def Tipo(self, ctx: Context) -> None:
-        self.expresiones[-1].Tipo(ctx)
+        for expr in self.expresiones:
+            expr.Tipo(ctx)
         self.cast = self.expresiones[-1].cast
 
     def str(self, n):
@@ -266,11 +239,16 @@ class Swicht(Nodo):
     casos: List[RamaCase]
 
     def Tipo(self, ctx: Context) -> None:
+        self.expr.Tipo(ctx)
         branch_types = Counter([c.tipo for c in self.casos])
-        for r in branch_types:
+        for i,r in enumerate(branch_types):
             if branch_types[r] > 1:
-                raise DUPLICATE_BRANCH(r)
-        self.cast = 'Object'
+                raise DUPLICATE_BRANCH(self.casos[i].linea,r)
+        for caso in self.casos:
+            ctx.add_case_scope({caso.nombre_variable:caso.tipo})
+            caso.cuerpo.Tipo(ctx)
+            ctx.exit_scope()
+        self.cast = ctx.get_common_ancestor([c.cuerpo.cast for c in self.casos])
 
     def str(self, n):
         resultado = super().str(n)
@@ -286,7 +264,7 @@ class Nueva(Nodo):
 
     def Tipo(self, ctx: Context) -> None:
         if not ctx.exists_type(self.tipo):
-            raise EXPR_IN_UNDEFINED_TYPE(self.tipo)
+            raise EXPR_IN_UNDEFINED_TYPE(self.linea,self.tipo)
         self.cast = self.tipo
 
     def str(self, n):
@@ -307,7 +285,7 @@ class OperacionBinaria(Expresion):
         self.izquierda.Tipo(ctx)
         self.derecha.Tipo(ctx)
         if self.izquierda.cast != 'Int' or self.derecha.cast != 'Int':
-            raise INCORRECT_BIN_OP_TYPES(self.izquierda.cast, self.operando, self.derecha.cast)
+            raise INCORRECT_BIN_OP_TYPES(self.linea,self.izquierda.cast, self.operando, self.derecha.cast)
         self.cast = 'Int'
 
 @dataclass
@@ -371,7 +349,7 @@ class Menor(OperacionBinaria):
         self.izquierda.Tipo(ctx)
         self.derecha.Tipo(ctx)
         if self.izquierda.cast != 'Int' or self.derecha.cast != 'Int':
-            raise ILLEGAL_COMPARISON
+            raise ILLEGAL_COMPARISON(self.linea)
         self.cast = 'Bool'
 
     def str(self, n):
@@ -390,7 +368,7 @@ class LeIgual(OperacionBinaria):
         self.izquierda.Tipo(ctx)
         self.derecha.Tipo(ctx)
         if self.izquierda.cast != 'Int' or self.derecha.cast != 'Int':
-            raise ILLEGAL_COMPARISON
+            raise ILLEGAL_COMPARISON(self.linea)
         self.cast = 'Bool'
 
     def str(self, n):
@@ -411,7 +389,7 @@ class Igual(OperacionBinaria):
         self.derecha.Tipo(ctx)
         if self.izquierda.cast in ('Int', 'Bool', 'String'):
             if self.izquierda.cast != self.derecha.cast:
-                raise ILLEGAL_COMPARISON
+                raise ILLEGAL_COMPARISON(self.linea)
         self.cast = 'Bool'
 
     def str(self, n):
@@ -432,6 +410,7 @@ class Neg(Expresion):
     def Tipo(self, ctx: Context) -> None:
         self.expr.Tipo(ctx)
         if self.expr.cast != 'Int':
+            # TODO Aqui igual crear excp para unary ops
             return self.set_default_cast()
         self.cast = 'Int'
 
@@ -452,6 +431,7 @@ class Not(Expresion):
     def Tipo(self, ctx: Context) -> None:
         self.expr.Tipo(ctx)
         if self.expr.cast != 'Bool':
+            # TODO Aqui igual crear excp para unary ops
             return self.set_default_cast()
         self.cast = 'Bool'
 
@@ -488,7 +468,7 @@ class Objeto(Expresion):
     def Tipo(self, ctx: Context) -> None:
         tipo = ctx.get_variable_type(self.nombre)
         if not tipo:
-            raise UNDECLARED_ID(self.nombre)
+            raise UNDECLARED_ID(self.linea,self.nombre)
         self.cast = tipo
 
     def str(self, n):
@@ -504,7 +484,7 @@ class NoExpr(Expresion):
     nombre: str = ''
 
     def Tipo(self, ctx: Context) -> None:
-        self.cast = 'Null'
+        self.cast = NULL
 
     def str(self, n):
         resultado = super().str(n)
@@ -565,35 +545,41 @@ class IterableNodo(Nodo):
 
 class Programa(IterableNodo):
 
-    def Tipo(self) -> list:
+    def Tipo(self) -> str:
         ctx = Context()
         for clase in self.secuencia:
             attributes = [c for c in clase.caracteristicas if isinstance(c, Atributo)]
             methods = [c for c in clase.caracteristicas if isinstance(c, Metodo)]
-            ctx.structure.add_new_class(
-                clase.nombre, clase.padre,
-                { a.nombre:a.tipo for a in attributes },
-                { m.nombre: {
-                    'type':m.tipo, 
-                    'formals': { f.nombre_variable:f.tipo for f in m.formales } 
-                } for m in methods }
-            )
-        # print(ctx.structure)
+            padre = clase.padre if clase.padre else 'Object'
+            try:
+                if ctx.structure.check_non_inheritable_classes(padre):
+                    raise INHERIT_BASIC_CLASS(clase.linea, clase.nombre, padre)
+                ctx.structure.add_new_class(
+                    clase.linea, clase.nombre, padre,
+                    { a.nombre:a.tipo for a in attributes },
+                    { m.nombre: {
+                        'type':m.tipo, 
+                        'formals': { f.nombre_variable:f.tipo for f in m.formales } 
+                    } for m in methods }
+                )
+            except CompilerError as err:
+                return f'{clase.nombre_fichero}:{str(err)}'
 
         try:
             ctx.structure.check_no_main()
         except NO_MAIN as err:
-            ctx.add_error(str(err))
-            return ctx.errores
+            return str(err)
 
         for clase in self.secuencia:
+            padre = clase.padre if clase.padre else 'Object'
             try:
+                if not ctx.structure.check_undefined_inherit(padre):
+                    raise UNDEFINED_INHERIT(clase.linea, clase.nombre, padre)
                 clase.Tipo(ctx)
             except CompilerError as err:
-                ctx.add_error(f'{clase.nombre_fichero}:{self.linea}: {str(err)}')
-                return ctx.errores
+                return f'{clase.nombre_fichero}:{str(err)}'
 
-        return ctx.errores
+        return None
 
     def str(self, n):
         resultado = super().str(n)
@@ -640,9 +626,24 @@ class Metodo(Caracteristica):
 
     def Tipo(self, ctx: Context) -> None:
         ctx.add_method_scope(self.nombre)
+        if not ctx.structure.check_valid_return_type(self.tipo):
+            raise UNDEFINED_RETURN_TYPE(self.linea, self.tipo, self.nombre)
+        for f,n in Counter(f.nombre_variable for f in self.formales).items():
+            if n > 1: 
+                raise REPEATED_FORMAL(self.linea, f)
+        for formal in self.formales:
+            if formal.nombre_variable == 'self':
+                raise NO_PARAMETER_SELF(formal.linea)
+            if formal.tipo == 'SELF_TYPE':
+                raise SELF_TYPE_PARAMETER(formal.linea, formal.nombre_variable)
+            ctx.structure.check_valid_redefined_formals(
+                self.linea, ctx.current_class(),
+                self.nombre,
+                {f.nombre_variable:f.tipo for f in self.formales}
+            )
         self.cuerpo.Tipo(ctx)
-        if self.cuerpo.cast != self.tipo:
-            return RETURN_NOT_CONFORM(self.cuerpo.cast, self.nombre, self.tipo)
+        if not ctx.inherits_from(self.cuerpo.cast, self.tipo):
+            raise RETURN_NOT_CONFORM(self.cuerpo.linea, self.cuerpo.cast, self.nombre, self.tipo)
         ctx.exit_scope()
 
     def str(self, n):
@@ -659,8 +660,14 @@ class Atributo(Caracteristica):
 
     def Tipo(self, ctx: Context) -> None:
         self.cuerpo.Tipo(ctx)
-        if not self.cuerpo.cast in (self.tipo, 'Null'):
-            raise ASSIGN_TYPE_ERROR(self.cuerpo.cast, self.tipo, self.nombre)
+        if self.nombre == 'self':
+            raise NO_ATTRIBUTE_SELF(self.linea)
+        if ctx.structure.check_repeated_inherited_attribute(ctx.current_class(), self.nombre):
+            raise INHERITED_ATTRIBUTE(self.linea, self.nombre)
+        if self.cuerpo.cast == NULL:
+            return
+        if not ctx.is_correct_type(self.tipo, self.cuerpo.cast):
+            raise ASSIGN_TYPE_ERROR(self.cuerpo.linea, self.cuerpo.cast, self.tipo, self.nombre)
 
     def str(self, n):
         resultado = super().str(n)
