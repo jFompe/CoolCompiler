@@ -7,10 +7,27 @@ from collections import Counter
 from Context import Context
 from Exceptions import *
 
+import ast
+from BasicClasses import *
 
-DEFAULT_CAST = 'Object'
+TAB = 2
 NULL = '_no_type'
+CURRENT_CLASS_ARGS = []
 
+BASE_INITS = { 'Int': {'tipo' : 'Int', 'valor': 0}, 
+                'String': {'tipo' : 'Stringg', 'valor': ''}, 
+                'Bool': {'tipo' : 'Bool', 'valor': False}
+            }
+
+
+
+def Expr_to_Body(expr, col):
+    body = expr if isinstance(expr, list) else [expr]
+    body = [e.Code(col) for e in body]
+    body = [e if issubclass(e.__class__, ast.stmt) 
+        else ast.Expr(value=e, lineno=e.lineno, col_offset=col) 
+        for e in body]
+    return body
 
 
 @dataclass
@@ -53,6 +70,21 @@ class Asignacion(Expresion):
             raise ASSIGN_TYPE_ERROR(self.cuerpo.linea, self.cuerpo.cast, tipo, self.nombre)
         self.cast = self.cuerpo.cast
 
+    def Code(self, col):
+        return ast.NamedExpr(
+            target=ast.Name(id=self.nombre, ctx=ast.Store(), lineno=self.linea, col_offset=col),
+            value=self.cuerpo.Code(col),
+            lineno=self.linea,
+            col_offset=col
+        )
+        # return ast.Assign(
+        #     targets=[ast.Name(id=self.nombre, ctx=ast.Store(), lineno=self.linea, col_offset=col)],
+        #     value=self.cuerpo.Code(col),
+        #     type_comment=None,
+        #     lineno=self.linea,
+        #     col_offset=col
+        # )
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_assign\n'
@@ -80,6 +112,21 @@ class LlamadaMetodoEstatico(Expresion):
             [arg.cast for arg in self.argumentos])
         metType = ctx.get_method_type(self.cuerpo.cast, self.nombre_metodo)
         self.cast = self.cuerpo.cast if metType == 'SELF_TYPE' else metType
+
+    def Code(self, col):
+        return ast.Call(
+            func=ast.Attribute(
+                value=self.cuerpo.Code(col),
+                attr=self.nombre_metodo,
+                ctx=ast.Load(),
+                lineno=self.linea,
+                col_offset=col
+            ),
+            args=[arg.Code(col) for arg in self.argumentos],
+            keywords=[],
+            lineno=self.linea,
+            col_offset=col
+        )
 
     def str(self, n):
         resultado = super().str(n)
@@ -111,6 +158,21 @@ class LlamadaMetodo(Expresion):
         metType = ctx.get_method_type(self.cuerpo.cast, self.nombre_metodo)
         self.cast = self.cuerpo.cast if metType == 'SELF_TYPE' else metType
 
+    def Code(self, col):
+        return ast.Call(
+            func=ast.Attribute(
+                value=self.cuerpo.Code(col),
+                attr=self.nombre_metodo,
+                ctx=ast.Load(),
+                lineno=self.linea,
+                col_offset=col
+            ),
+            args=[arg.Code(col) for arg in self.argumentos],
+            keywords=[],
+            lineno=self.linea,
+            col_offset=col
+        )
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_dispatch\n'
@@ -137,6 +199,21 @@ class Condicional(Expresion):
             raise INCORRECT_LOOP_CONDITION(self.condicion.linea)
         self.cast = ctx.get_common_ancestor([self.verdadero.cast, self.falso.cast])
 
+    def Code(self, col):
+        if isinstance(self.verdadero, Bloque) or isinstance(self.falso, Bloque):
+            return ast.If(
+                test=self.condicion.Code(col),
+                body=Expr_to_Body(self.verdadero, col+TAB),
+                orelse=Expr_to_Body(self.falso, col+TAB),
+                lineno=self.condicion.linea,
+                col_offset=col
+            )
+        return ast.IfExp(
+            test=self.condicion.Code(col),
+            body=self.verdadero.Code(col),
+            orelse=self.falso.Code(col),
+        )
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_cond\n'
@@ -159,6 +236,15 @@ class Bucle(Expresion):
             raise INCORRECT_LOOP_CONDITION(self.condicion.linea)
         self.cast = 'Object'
 
+    def Code(self, col):
+        return ast.While(
+            test=self.condicion.Code(col),
+            body=Expr_to_Body(self.cuerpo, col+TAB),
+            orelse=[],
+            lineno=self.condicion.linea,
+            col_offset=col
+        )
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_loop\n'
@@ -176,8 +262,6 @@ class Let(Expresion):
     cuerpo: Expresion
 
     def Tipo(self, ctx: Context) -> None:
-        # TODO Check nombre en scope y cuerpo igual al tipo
-        # Ir metiendo en el scope
         ctx.add_let_scope({ self.nombre:self.tipo })
         self.inicializacion.Tipo(ctx)
         self.cuerpo.Tipo(ctx)
@@ -188,6 +272,19 @@ class Let(Expresion):
             if not ctx.inherits_from(self.inicializacion.cast, self.tipo):
                 raise INITIALIZATION_NOT_CONFORM(self.inicializacion.linea,self.inicializacion.cast, self.nombre, self.tipo)
         self.cast = self.cuerpo.cast
+
+    def Code(self, col):
+        assign = ast.Assign(
+            targets=[ast.Name(id=self.nombre, ctx=ast.Store(), lineno=self.linea, col_offset=col)],
+            value=self.inicializacion.Code(col),
+            type_comment=None,
+            lineno=self.linea,
+            col_offset=col
+        )
+        body = self.cuerpo.Code(col)
+        if isinstance(body, list):
+            return [assign] + body
+        return [assign, body]
 
     def str(self, n):
         resultado = super().str(n)
@@ -209,6 +306,9 @@ class Bloque(Expresion):
             expr.Tipo(ctx)
         self.cast = self.expresiones[-1].cast
 
+    def Code(self, col):
+        return [e.Code(col) for e in self.expresiones]
+
     def str(self, n):
         resultado = super().str(n)
         resultado = f'{n*" "}_block\n'
@@ -223,6 +323,21 @@ class RamaCase(Nodo):
     nombre_variable: str
     tipo: str
     cuerpo: Expresion
+
+    def Code(self, expr, line, col, orelse=None):
+        return ast.IfExp(
+            test=ast.Call(
+                func=ast.Name(id='isinstance', ctx=ast.Load(), lineno=line, col_offset=col),
+                args=[expr, self.tipo],
+                keywords=[],
+                lineno=line,
+                col_offset=col
+            ),
+            body=self.cuerpo.Code(col),
+            orelse=orelse,
+            lineno=line,
+            col_offset=col
+        )
 
     def str(self, n):
         resultado = super().str(n)
@@ -250,6 +365,44 @@ class Swicht(Nodo):
             ctx.exit_scope()
         self.cast = ctx.get_common_ancestor([c.cuerpo.cast for c in self.casos])
 
+    def Code(self, col):
+        # TODO
+        expr = self.expr.Code(col)
+        return self.Chained_Ifs(self.expr, self.casos, self.linea, col)
+
+    def Chained_Ifs(self, expr, casos, line, col):
+        # TODO Cambiar lo de las lineas
+        if len(casos) == 1:
+            caso = casos[0]
+            return ast.If(
+                test=ast.Compare(
+                    left=ast.Constant(value=expr, kind=None, lineno=line, col_offset=col),
+                    ops=[ast.Eq()],
+                    comparators=[ast.Constant(value=caso.tipo, kind=None, lineno=line, col_offset=col)],
+                    lineno=line,
+                    col_offset=col
+                ),
+                body=[],
+                orelse=[],
+                lineno=line,
+                col_offset=col
+            )
+
+        return ast.If(
+            test=ast.Compare(
+                left=ast.Constant(value=expr, kind=None, lineno=line, col_offset=col),
+                ops=[ast.Eq()],
+                comparators=[ast.Constant(value=casos[0].tipo, kind=None, lineno=line, col_offset=col)],
+                lineno=line,
+                col_offset=col
+            ),
+            body=[],
+            orelse=[c.Code(col) for c in self.casos[1:]],
+            lineno=line,
+            col_offset=col
+        )
+
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_typcase\n'
@@ -266,6 +419,15 @@ class Nueva(Nodo):
         if not ctx.exists_type(self.tipo):
             raise EXPR_IN_UNDEFINED_TYPE(self.linea,self.tipo)
         self.cast = self.tipo
+
+    def Code(self, col):
+        return ast.Call(
+            func=ast.Name(id=self.tipo, ctx=ast.Load(), lineno=self.linea, col_offset=col),
+            args=[],
+            keywords=[],
+            lineno=self.linea,
+            col_offset=col
+        )
 
     def str(self, n):
         resultado = super().str(n)
@@ -292,6 +454,14 @@ class OperacionBinaria(Expresion):
 class Suma(OperacionBinaria):
     operando: str = '+'
 
+    def Code(self, col):
+        return ast.BinOp(
+            left=self.izquierda.Code(col), 
+            op=ast.Add(), 
+            right=self.derecha.Code(col),
+            lineno=self.linea,
+            col_offset=col)
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_plus\n'
@@ -304,6 +474,14 @@ class Suma(OperacionBinaria):
 @dataclass
 class Resta(OperacionBinaria):
     operando: str = '-'
+
+    def Code(self, col):
+        return ast.BinOp(
+            left=self.izquierda.Code(col), 
+            op=ast.Sub(), 
+            right=self.derecha.Code(col),
+            lineno=self.linea,
+            col_offset=col)
 
     def str(self, n):
         resultado = super().str(n)
@@ -318,6 +496,14 @@ class Resta(OperacionBinaria):
 class Multiplicacion(OperacionBinaria):
     operando: str = '*'
 
+    def Code(self, col):
+        return ast.BinOp(
+            left=self.izquierda.Code(col), 
+            op=ast.Mult(), 
+            right=self.derecha.Code(col),
+            lineno=self.linea,
+            col_offset=col)
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_mul\n'
@@ -331,6 +517,14 @@ class Multiplicacion(OperacionBinaria):
 @dataclass
 class Division(OperacionBinaria):
     operando: str = '/'
+
+    def Code(self, col):
+        return ast.BinOp(
+            left=self.izquierda.Code(col), 
+            op=ast.Div(), 
+            right=self.derecha.Code(col),
+            lineno=self.linea,
+            col_offset=col)
 
     def str(self, n):
         resultado = super().str(n)
@@ -352,6 +546,14 @@ class Menor(OperacionBinaria):
             raise ILLEGAL_COMPARISON(self.linea)
         self.cast = 'Bool'
 
+    def Code(self, col):
+        return ast.Compare(
+            left=self.izquierda.Code(col),
+            ops=[ast.Lt()],
+            comparators=[self.derecha.Code(col)],
+            lineno=self.linea,
+            col_offset=col)
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_lt\n'
@@ -370,6 +572,14 @@ class LeIgual(OperacionBinaria):
         if self.izquierda.cast != 'Int' or self.derecha.cast != 'Int':
             raise ILLEGAL_COMPARISON(self.linea)
         self.cast = 'Bool'
+
+    def Code(self, col):
+        return ast.Compare(
+            left=self.izquierda.Code(col),
+            ops=[ast.LtE()],
+            comparators=[self.derecha.Code(col)],
+            lineno=self.linea,
+            col_offset=col)
 
     def str(self, n):
         resultado = super().str(n)
@@ -392,6 +602,14 @@ class Igual(OperacionBinaria):
                 raise ILLEGAL_COMPARISON(self.linea)
         self.cast = 'Bool'
 
+    def Code(self, col):
+        return ast.Compare(
+            left=self.izquierda.Code(col),
+            ops=[ast.Eq()],
+            comparators=[self.derecha.Code(col)],
+            lineno=self.linea,
+            col_offset=col)
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_eq\n'
@@ -410,9 +628,15 @@ class Neg(Expresion):
     def Tipo(self, ctx: Context) -> None:
         self.expr.Tipo(ctx)
         if self.expr.cast != 'Int':
-            # TODO Aqui igual crear excp para unary ops
-            return self.set_default_cast()
+            raise Exception('Error en NEG')
         self.cast = 'Int'
+
+    def Code(self, col):
+        return ast.UnaryOp(
+            op=ast.USub(),
+            operand=self.expr.Code(col),
+            lineno=self.linea,
+            col_offset=col)
 
     def str(self, n):
         resultado = super().str(n)
@@ -431,9 +655,15 @@ class Not(Expresion):
     def Tipo(self, ctx: Context) -> None:
         self.expr.Tipo(ctx)
         if self.expr.cast != 'Bool':
-            # TODO Aqui igual crear excp para unary ops
-            return self.set_default_cast()
+            raise Exception('Error en NOT')
         self.cast = 'Bool'
+
+    def Code(self, col):
+        return ast.UnaryOp(
+            op=ast.Not(),
+            operand=self.expr.Code(col),
+            lineno=self.linea,
+            col_offset=col)
 
     def str(self, n):
         resultado = super().str(n)
@@ -450,6 +680,14 @@ class EsNulo(Expresion):
     def Tipo(self, ctx: Context) -> None:
         self.expr.Tipo(ctx)
         self.cast = 'Bool'
+
+    def Code(self, col):
+        return ast.Compare(
+            left=self.expr.Code(col),
+            ops=[ast.Is()],
+            comparators=[ast.Constant(value=None, kind=None, lineno=self.linea, col_offset=col)],
+            lineno=self.linea,
+            col_offset=col)
 
     def str(self, n):
         resultado = super().str(n)
@@ -471,6 +709,22 @@ class Objeto(Expresion):
             raise UNDECLARED_ID(self.linea,self.nombre)
         self.cast = tipo
 
+    def Code(self, col):
+        if self.nombre in CURRENT_CLASS_ARGS:
+            return ast.Attribute(
+                value=ast.Name(id='self', ctx=ast.Load(), lineno=self.linea, col_offset=col),
+                attr=self.nombre,
+                ctx=ast.Load(),
+                lineno=self.linea,
+                col_offset=col
+            )
+        return ast.Name(
+            id=self.nombre,
+            ctx=ast.Load(),
+            lineno=self.linea,
+            col_offset=col
+        )
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_object\n'
@@ -486,6 +740,13 @@ class NoExpr(Expresion):
     def Tipo(self, ctx: Context) -> None:
         self.cast = NULL
 
+    def Code(self, col):
+        return ast.Constant(
+            value=None,
+            kind=None,
+            lineno=self.linea,
+            col_offset=col)
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_no_expr\n'
@@ -499,6 +760,15 @@ class Entero(Expresion):
 
     def Tipo(self, ctx: Context) -> None:
         self.cast = 'Int'
+
+    def Code(self, col):
+        return ast.Call(
+            func=ast.Name(id='Int', ctx=ast.Load(), lineno=self.linea, col_offset=col),
+            args=[ast.Constant(value=self.valor, kind=None, lineno=self.linea, col_offset=col)],
+            keywords=[],
+            lineno=self.linea,
+            col_offset=col
+        )
 
     def str(self, n):
         resultado = super().str(n)
@@ -515,6 +785,15 @@ class String(Expresion):
     def Tipo(self, ctx: Context) -> None:
         self.cast = 'String'
 
+    def Code(self, col):
+        return ast.Call(
+            func=ast.Name(id='Stringg', ctx=ast.Load(), lineno=self.linea, col_offset=col),
+            args=[ast.Constant(value=self.valor, kind=None, lineno=self.linea, col_offset=col)],
+            keywords=[],
+            lineno=self.linea,
+            col_offset=col
+        )
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_string\n'
@@ -530,6 +809,15 @@ class Booleano(Expresion):
     
     def Tipo(self, ctx: Context) -> None:
         self.cast = 'Bool'
+
+    def Code(self, col):
+        return ast.Call(
+            func=ast.Name(id='Bool', ctx=ast.Load(), lineno=self.linea, col_offset=col),
+            args=[ast.Constant(value=self.valor, kind=None, lineno=self.linea, col_offset=col)],
+            keywords=[],
+            lineno=self.linea,
+            col_offset=col
+        )
 
     def str(self, n):
         resultado = super().str(n)
@@ -581,6 +869,42 @@ class Programa(IterableNodo):
 
         return None
 
+    def Code(self, line=0, col=0):
+        body = []
+        with open('BasicClasses.py', 'r') as f:
+            exec(compile(ast.parse(f.read()), filename='', mode='exec'))
+        for c in self.secuencia:
+            body.append(c.Code(col))
+            line = body[-1].lineno + 1
+        body.append(self._MainCall(line, col))
+        module = ast.Module(body=body, type_ignores=[])
+        return ast.fix_missing_locations(module)
+
+    def _MainCall(self, line, col):
+        return ast.Expr(
+            value=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(
+                        func=ast.Name(id='Main', ctx=ast.Load(), lineno=line, col_offset=col),
+                        args=[],
+                        keywords=[],
+                        lineno=line,
+                        col_offset=col
+                    ),
+                    attr='main',
+                    ctx=ast.Load(),
+                    lineno=line,
+                    col_offset=col
+                ),
+                args=[],
+                keywords=[],
+                lineno=line,
+                col_offset=col
+            ),
+            lineno=line,
+            col_offset=col
+        )
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{" "*n}_program\n'
@@ -607,7 +931,29 @@ class Clase(Nodo):
         for c in self.caracteristicas:
             c.Tipo(ctx)
         ctx.exit_scope()
-                
+
+    def Code(self, col):
+        padre = self.padre if self.padre else 'Object'
+        body = self.PrepareAttributes(col) + self.InitAttributes(col)
+        global CURRENT_CLASS_ARGS
+        CURRENT_CLASS_ARGS = [at.nombre for at in self.caracteristicas if isinstance(at, Atributo)]
+        body += [c.Code(col+TAB) for c in self.caracteristicas if isinstance(c, Metodo)]
+        return ast.ClassDef(
+            name=self.nombre,
+            bases=[ast.Name(id=padre, ctx=ast.Load(), lineno=self.linea, col_offset=col)],
+            keywords=[],
+            body=body,
+            decorator_list=[],
+            lineno=self.linea,
+            col_offset=col
+        )
+
+    def PrepareAttributes(self, col):
+        return [at.Prepare(col) for at in self.caracteristicas if isinstance(at, Atributo)]
+
+    def InitAttributes(self, col):
+        return [at.Init(col) for at in self.caracteristicas if isinstance(at, Atributo)]
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_class\n'
@@ -646,6 +992,49 @@ class Metodo(Caracteristica):
             raise RETURN_NOT_CONFORM(self.cuerpo.linea, self.cuerpo.cast, self.nombre, self.tipo)
         ctx.exit_scope()
 
+    def Code(self, col):
+        cuerpo = self.cuerpo.Code(col+TAB)
+        exprs = cuerpo if isinstance(cuerpo, list) else [cuerpo]
+        astexprs = [exp if issubclass(exp.__class__, ast.stmt)
+                        else (ast.Expr(value=exp, lineno=self.linea, col_offset=col+TAB) 
+                    ) for exp in exprs[:-1]]
+        last = exprs[-1]
+        astexprs.append(last if issubclass(last.__class__, ast.stmt) else ast.Return(
+            value=last, lineno=self.linea, col_offset=col+TAB
+        ))
+        return ast.FunctionDef(
+            name=self.nombre,
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[
+                    ast.arg(
+                        arg='self',
+                        annotation=None,
+                        type_comment=None,
+                        lineno=self.linea, col_offset=col
+                    )
+                ] + [ast.arg(
+                        arg=f.nombre_variable, 
+                        annotation=None,
+                        type_comment=None,
+                        lineno=f.linea, col_offset=col) 
+                    for f in self.formales],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+                lineno=self.linea,
+                col_offset=col
+            ),
+            body=astexprs,
+            decorator_list=[],
+            returns=None,
+            type_comment=None,
+            lineno=self.linea,
+            col_offset=col
+        )
+
     def str(self, n):
         resultado = super().str(n)
         resultado += f'{(n)*" "}_method\n'
@@ -668,6 +1057,53 @@ class Atributo(Caracteristica):
             return
         if not ctx.is_correct_type(self.tipo, self.cuerpo.cast):
             raise ASSIGN_TYPE_ERROR(self.cuerpo.linea, self.cuerpo.cast, self.tipo, self.nombre)
+
+    # def Code(self, col):
+    #     valor = self.cuerpo.Code(col)
+    #     if hasattr(valor, 'value') and valor.value is None and self.tipo in BASE_INITS:
+    #         valor =  ast.Call(
+    #             func=ast.Name(id=BASE_INITS[self.tipo]['tipo'], ctx=ast.Load(), lineno=self.linea, col_offset=col),
+    #             args=[ast.Constant(value=BASE_INITS[self.tipo]['valor'], kind=None, lineno=self.linea, col_offset=col)],
+    #             keywords=[],
+    #             lineno=self.linea,
+    #             col_offset=col
+    #         )
+    #     return ast.Assign(
+    #         targets=[ast.Name(id=self.nombre, ctx=ast.Store(), lineno=self.linea, col_offset=col)],
+    #         value=valor,
+    #         type_comment=None,
+    #         lineno=self.linea,
+    #         col_offset=col
+    #     )
+
+    def Prepare(self, col):
+        valor = (ast.Call(
+                func=ast.Name(id=BASE_INITS[self.tipo]['tipo'], ctx=ast.Load(), lineno=self.linea, col_offset=col),
+                args=[ast.Constant(value=BASE_INITS[self.tipo]['valor'], kind=None, lineno=self.linea, col_offset=col)],
+                keywords=[],
+                lineno=self.linea,
+                col_offset=col
+            ) if self.tipo in BASE_INITS 
+                else ast.Constant(value=None, kind=None, lineno=self.linea, col_offset=col))
+        return ast.Assign(
+            targets=[ast.Name(id=self.nombre, ctx=ast.Store(), lineno=self.linea, col_offset=col)],
+            value=valor,
+            type_comment=None,
+            lineno=self.linea,
+            col_offset=col
+        )
+
+    def Init(self, col):
+        if not isinstance(self.cuerpo, NoExpr):
+            return ast.Assign(
+                targets=[ast.Name(id=self.nombre, ctx=ast.Store(), lineno=self.linea, col_offset=col)],
+                value=self.cuerpo.Code(col),
+                type_comment=None,
+                lineno=self.linea,
+                col_offset=col
+            )
+        return ast.Pass(lineno=self.linea, col_offset=col)
+
 
     def str(self, n):
         resultado = super().str(n)

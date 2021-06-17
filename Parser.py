@@ -8,6 +8,8 @@ import os
 # from Clases import *
 from nuevasClases import *
 
+from astpretty import pprint
+
 DIRECTORIO = os.path.join("E:\\", "UNI", "4O CURSO",
                         "2O CUATRI", "LENGUAJES DE PROGRAMACION",
                         "CoolCompiler")
@@ -15,29 +17,24 @@ DIRECTORIO = os.path.join("E:\\", "UNI", "4O CURSO",
 
 sys.path.append(DIRECTORIO)
 
-GRADING = os.path.join(DIRECTORIO, 'gradingSemantics')
+GRADING = os.path.join(DIRECTORIO, 'gradingFINAL')
 FICHEROS = os.listdir(GRADING)
 
 TESTS = [fich for fich in FICHEROS
          if os.path.isfile(os.path.join(GRADING, fich))
-         and fich.endswith(".test")]
+         and fich.endswith(".cl")]
 
 SINGLE_TESTS = [
-    # "list.cl.test"
-
     # "-- PASADOS --"
-    # "assignment.test"
-    # "anattributenamedself.test"
-    # 'badmethodcallsitself.test'
-    # "badargs1.test"
-    # "badequalitytest.test"
-    # "badstaticdispatch.test"
-    # "basic.test"
-    # "cells.cl.test"
-    # "dispatch.test"
-    # "hairyscary.cl.test"
-    # "initwithself.test"
-    # "redefinedclass.test"
+    # "abort.cl",
+    # "assignment-val.cl",
+    # "basic-init.cl",
+    # "fact.cl",
+    # "fibo.cl",
+    # "string-methods.cl",
+    # "init-default.cl"
+
+    # "helloWorld.test"
 ]
 
 PRINT_ERRORS = False
@@ -380,7 +377,7 @@ class CoolParser(Parser):
 
 
 for fich in TESTS:
-    # print(f'Evaluando {fich}...')
+    print(f'Evaluando {fich}...')
     f = open(os.path.join(GRADING, fich), 'r')
     g = open(os.path.join(GRADING, fich + '.out'), 'r')
     lexer = CoolLexer()
@@ -399,6 +396,22 @@ for fich in TESTS:
             # print(semantic_erorrs)
             if not semantic_erorrs:
                 resultado = '\n'.join([c for c in j.str(0).split('\n') if c and '#' not in c])
+                # print('--- No semantic errors')
+                codigo = j.Code()
+                if PRINT_ERRORS:
+                    pprint(codigo)
+                code = compile(codigo, filename=fich, mode='exec')
+
+                sys.stdout = open(os.path.join(GRADING, fich + '.myout'), 'w')
+                exec(code)
+                sys.stdout = sys.__stdout__
+
+                a = open(os.path.join(GRADING, fich + '.out'), 'r')
+                b = open(os.path.join(GRADING, fich + '.myout'), 'r')
+                if a.read() != b.read():
+                    print(f'Revisar ejecucion de {fich}')
+                a.close()
+                b.close()
             else:
                 resultado = semantic_erorrs + '\n' + "Compilation halted due to static semantic errors."
         else:
@@ -407,13 +420,14 @@ for fich in TESTS:
         f.close(), g.close()
         if resultado.lower().strip().split() != bien.lower().strip().split():
             print(f"Revisa el fichero {fich}")
-            f = open(os.path.join(GRADING, fich)+'.nuestro', 'w')
-            g = open(os.path.join(GRADING, fich)+'.bien', 'w')
-            f.write(resultado.strip())
-            g.write(bien.strip())
-            f.close()
-            g.close()
+            # f = open(os.path.join(GRADING, fich)+'.nuestro', 'w')
+            # g = open(os.path.join(GRADING, fich)+'.bien', 'w')
+            # f.write(resultado.strip())
+            # g.write(bien.strip())
+            # f.close()
+            # g.close()
 
     except Exception as err:
+        sys.stdout = sys.__stdout__
         print(err)
         print(f"Falla en {fich}")
