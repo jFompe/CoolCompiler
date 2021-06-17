@@ -1,7 +1,5 @@
-from os import O_RANDOM
 from Exceptions import *
-from collections import defaultdict, Counter
-from pprint import pformat, pprint
+from pprint import pformat
 
 
 BASIC_CLASSES = [
@@ -26,6 +24,12 @@ class Structure:
 
     def __repr__(self) -> str:
         return pformat(self.structure)
+
+    def __contains__(self, x) -> str:
+        for c in self.structure:
+            if x in self.structure[c]['methods']:
+                return c
+        return None
 
     def has_main(self):
         return self.structure.get('Main', None) is not None
