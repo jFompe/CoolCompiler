@@ -7,3 +7,8 @@ salida.out
 
 *.test.bien
 *.test.nuestro
+
+*.ipynb
+*.bien
+*.myout
+*.nuestro
